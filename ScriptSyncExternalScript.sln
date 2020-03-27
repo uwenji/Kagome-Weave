@@ -1,0 +1,40 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 15
+VisualStudioVersion = 15.0.26228.4
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ScriptSyncExternalCodes_CSharp", "ScriptSyncExternalCodes_CSharp\ScriptSyncExternalCodes_CSharp.csproj", "{12CF5D26-A45B-4BBA-9648-3D1CBC8F30B6}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		BabyKangaroo|Any CPU = BabyKangaroo|Any CPU
+		Debug|Any CPU = Debug|Any CPU
+		DynamicCode|Any CPU = DynamicCode|Any CPU
+		Dynamo|Any CPU = Dynamo|Any CPU
+		DynamoPlayground|Any CPU = DynamoPlayground|Any CPU
+		Release|Any CPU = Release|Any CPU
+		Sofistik|Any CPU = Sofistik|Any CPU
+		SofistikDotNet|Any CPU = SofistikDotNet|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{12CF5D26-A45B-4BBA-9648-3D1CBC8F30B6}.BabyKangaroo|Any CPU.ActiveCfg = BabyKangaroo|Any CPU
+		{12CF5D26-A45B-4BBA-9648-3D1CBC8F30B6}.BabyKangaroo|Any CPU.Build.0 = BabyKangaroo|Any CPU
+		{12CF5D26-A45B-4BBA-9648-3D1CBC8F30B6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{12CF5D26-A45B-4BBA-9648-3D1CBC8F30B6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{12CF5D26-A45B-4BBA-9648-3D1CBC8F30B6}.DynamicCode|Any CPU.ActiveCfg = DynamicCode|Any CPU
+		{12CF5D26-A45B-4BBA-9648-3D1CBC8F30B6}.DynamicCode|Any CPU.Build.0 = DynamicCode|Any CPU
+		{12CF5D26-A45B-4BBA-9648-3D1CBC8F30B6}.Dynamo|Any CPU.ActiveCfg = Dynamo|Any CPU
+		{12CF5D26-A45B-4BBA-9648-3D1CBC8F30B6}.Dynamo|Any CPU.Build.0 = Dynamo|Any CPU
+		{12CF5D26-A45B-4BBA-9648-3D1CBC8F30B6}.DynamoPlayground|Any CPU.ActiveCfg = DynamoPlayground|Any CPU
+		{12CF5D26-A45B-4BBA-9648-3D1CBC8F30B6}.DynamoPlayground|Any CPU.Build.0 = DynamoPlayground|Any CPU
+		{12CF5D26-A45B-4BBA-9648-3D1CBC8F30B6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{12CF5D26-A45B-4BBA-9648-3D1CBC8F30B6}.Release|Any CPU.Build.0 = Release|Any CPU
+		{12CF5D26-A45B-4BBA-9648-3D1CBC8F30B6}.Sofistik|Any CPU.ActiveCfg = Sofistik|Any CPU
+		{12CF5D26-A45B-4BBA-9648-3D1CBC8F30B6}.Sofistik|Any CPU.Build.0 = Sofistik|Any CPU
+		{12CF5D26-A45B-4BBA-9648-3D1CBC8F30B6}.SofistikDotNet|Any CPU.ActiveCfg = SofistikDotNet|Any CPU
+		{12CF5D26-A45B-4BBA-9648-3D1CBC8F30B6}.SofistikDotNet|Any CPU.Build.0 = SofistikDotNet|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal
