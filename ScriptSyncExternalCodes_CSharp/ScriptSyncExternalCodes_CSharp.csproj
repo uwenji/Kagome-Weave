@@ -101,6 +101,7 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Templates\ValenceKSolver.cs" />
     <Compile Include="Templates\ValenceGridTools .cs" />
     <Compile Include="Templates\ValenceNumberTools.cs" />
     <Compile Include="Templates\ValenceTools.cs" />

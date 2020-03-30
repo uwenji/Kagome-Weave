@@ -23,6 +23,7 @@ using System.Windows.Forms;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using KPlankton;
+using KangarooSolver;
 
 #region padding (this ensures the line number of this file match with those in the code editor of the C# Script component
 
@@ -35,10 +36,9 @@ using KPlankton;
 
 
 
-
 #endregion
 
-public partial class ValenceNumberTools : GH_ScriptInstance
+public partial class ValenceKSolver : GH_ScriptInstance
 {
     #region Do_not_modify_this_region
     private void Print(string text) { }
@@ -53,75 +53,106 @@ public partial class ValenceNumberTools : GH_ScriptInstance
     #endregion
 
 
-    private void RunScript(Mesh M, DataTree<Point3d> Vertices, DataTree<int> vCount, bool Reset, int subStep, Vector3d shift, ref object Iteration, ref object adM, ref object reM)
+    private void RunScript(Mesh M, DataTree<Point3d> Vertices, DataTree<int> vCount, bool Reset, bool On, ref object adM, ref object A)
     {
         // <Custom code> 
+        kM = M.ToKPlanktonMesh();
+        //prestored vertices index
+        List<int> storedID = new List<int>(); //Singularity id
+        double t = 0.0001; //tolerance
+        for (int i = 0; i < Vertices.BranchCount; i++)
+        {
+            for (int j = 0; j < kM.Vertices.Count; j++)
+            {
+                if (kM.Vertices[j].ToPoint3d().DistanceTo(Vertices.Branches[i][0]) <= t)
+                {
+                    storedID.Add(j);
+                }
+            }
+        }
+
+        for (int i = 0; i < storedID.Count; i++)
+        {
+            List<int> flipEdges = InputValence(kM, storedID[i], vCount.Branches[i]);
+            for (int j = 0; j < vCount.Branches[i].Count; j++)
+            {
+                bool type;
+                if (vCount.Branches[i][j] < 0)
+                    type = false;
+                else
+                    type = true;
+                SearchRegion(kM, flipEdges[j], type);
+            }
+        }
+
+        Mesh rM = kM.ToRhinoMesh();
+        adM = rM;
+        #region Kangaroo
+        //hinge
+        List<Point3d>[] hingePs = KangarooSolver.Util.GetHingePoints(rM);
+        for (int i = 0; i < hingePs[0].Count; i++)
+        {
+            KangarooSolver.IGoal hinge = new KangarooSolver.Goals.Hinge(hingePs[0][i], hingePs[1][i], hingePs[2][i], hingePs[3][i], 0.0, 1.0);
+            //GoalList.Add(hinge);
+        }
+        //spring
+        List<Line> edges = new List<Line>();
+        List<Line> nextEdges = new List<Line>();
+        List<Point3d> vertices = new List<Point3d>();
+        double averageLength = 0;
+        for (int i = 0; i < kM.Halfedges.Count; i += 2)
+        {
+            Point3d s = kM.Vertices[kM.Halfedges[i].StartVertex].ToPoint3d();
+            Line e = new Line(s, kM.Vertices[kM.Halfedges[kM.Halfedges.GetPairHalfedge(i)].StartVertex].ToPoint3d());
+            Line ne = new Line(kM.Vertices[kM.Halfedges[kM.Halfedges[i].PrevHalfedge].StartVertex].ToPoint3d(), s);
+            edges.Add(e); nextEdges.Add(ne);
+            vertices.Add(s);
+            averageLength += e.Length;
+        }
+        averageLength = averageLength / (kM.Halfedges.Count / 2);
+        foreach (Line l in edges)
+        {
+            KangarooSolver.IGoal sping = new KangarooSolver.Goals.Spring(l, averageLength, 1.0);
+            GoalList.Add(sping);
+        }
+        //collision
+        KangarooSolver.IGoal sphCollision = new KangarooSolver.Goals.SphereCollide(vertices, averageLength, 1.0);
+        //GoalList.Add(sphCollision);
+        //equalAngle
+        KangarooSolver.IGoal equalAngle = new KangarooSolver.Goals.EqualAngle(edges, nextEdges, 1.0);
+        //GoalList.Add(equalAngle);
+
         if (Reset)
         {
             displayLabs = new List<int>();
             displayGraphes = new List<int>();
             displayEdges = new List<Line>();
-
-            kM = M.ToKPlanktonMesh();
-            //double resetLength = ComputeAverageLength(kM);
-            //prestored vertices index
-            storedID = new List<int>(); //Singularity id 
-            double t = 0.0001; //tolerance
-            for (int i = 0; i < Vertices.BranchCount; i++)
+            
+            PS = new KangarooSolver.PhysicalSystem();
+            GoalList = new List<IGoal>();
+            foreach (IGoal G in GoalList) //Assign indexes to the particles in each Goal:
             {
-                for (int j = 0; j < kM.Vertices.Count; j++)
-                {
-                    if (kM.Vertices[j].ToPoint3d().DistanceTo(Vertices.Branches[i][0]) <= t)
-                    {
-                        storedID.Add(j);
-                    }
-                }
+                PS.AssignPIndex(G, 0.01); // the second argument is the tolerance distance below which points combine into a single particle
             }
-
-            for (int i = 0; i < storedID.Count; i++)
-            {
-                List<int> flipEdges = InputValence(kM, storedID[i], vCount.Branches[i]);
-                for (int j = 0; j < vCount.Branches[i].Count; j++)
-                {
-                    bool type;
-                    if (vCount.Branches[i][j] < 0)
-                        type = false;
-                    else
-                        type = true;
-                    SearchRegion(kM, flipEdges[j], type);
-                }
-            }
-
-            relaxMesh = new MeshRelaxztion(kM);
-            relaxMesh.ComputeAverageLength();
-            //relaxMesh.kM.Vertices.SetVertex(1, kM.Vertices[1].X + 1, kM.Vertices[1].Y + 1, kM.Vertices[1].Z + 1);
-            Count = 0;
         }
         else
         {
-            if (Count < subStep)
-            {
-                relaxMesh.Update();
-                relaxMesh.UpdateDisplay(displayLabs, displayGraphes, out displayEdges);
-                Count++;
-            }
+            UpdateDisplayEdges();
         }
-        
-        //adM = kM.ToRhinoMesh();
-        //Transform move = Transform.Translation(shift);
-        Mesh relaxRhMesh = relaxMesh.kM.ToRhinoMesh();
-        //relaxRhMesh.Transform(move);;
-        reM = relaxRhMesh;
-        Iteration = Count;
+        #endregion
+        A = displayGraphes;
+        /*
+        if (subStep)
+        {
+          PS.Step(GoalList, true, 0.001);
+          counter++;
+        }*/
 
         #region component description
         Component.Message = "BurningFront";
         Component.Params.Input[0].Description = "Mesh";
         Component.Params.Input[1].Description = "Singularity point";
         Component.Params.Input[2].Description = "Valence number";
-        Component.Params.Input[3].Description = "Reset Relaxation";
-        Component.Params.Input[4].Description = "Max Iteration";
-        Component.Params.Input[5].Description = "Shift relaxMesh from initMesh";
         Component.Params.Output[1].Description = "Flat State mesh";
         #endregion
         // </Custom code> 
@@ -129,200 +160,45 @@ public partial class ValenceNumberTools : GH_ScriptInstance
 
     // <Custom additional code> 
     KPlanktonMesh kM;
+    KangarooSolver.PhysicalSystem PS = new KangarooSolver.PhysicalSystem();
+    List<IGoal> GoalList = new List<IGoal>();
+
     #region Visualize edges
     List<Line> displayEdges = new List<Line>();
     List<int> displayGraphes = new List<int>();
     List<int> displayLabs = new List<int>();
-    List<int> storedID = new List<int>();
 
+    public void UpdateDisplayEdges()
+    {
+        displayEdges = new List<Line>();
+
+        for (int i = 0; i < displayGraphes.Count; i+= 3)
+        {
+            Point3d sDecr = kM.Vertices[displayGraphes[i]].ToPoint3d();
+            Point3d eDecr = kM.Vertices[displayGraphes[i + 1]].ToPoint3d();
+            Point3d sIncr = kM.Vertices[displayGraphes[i + 2]].ToPoint3d();
+
+            displayEdges.Add(new Line(sDecr, eDecr));
+            displayEdges.Add(new Line(sIncr, sDecr));//halfedge data previous edge's end is current edge's start
+        }
+    }
     public override void DrawViewportWires(IGH_PreviewArgs args)
     {
-        for(int i = 0; i < storedID.Count; i++)
-        {
-            args.Display.DrawDot(kM.Vertices[storedID[i]].ToPoint3d() + new Point3d(0,0,1.0), i.ToString(), System.Drawing.Color.Crimson, System.Drawing.Color.White);
-        }
+        base.DrawViewportWires(args);
+        Plane plane;
+        args.Viewport.GetFrustumFarPlane(out plane);
 
-        if (displayEdges.Count > 0)
+        for (int i = 0; i < displayEdges.Count; i++)
         {
-            base.DrawViewportWires(args);
-            Plane plane;
-            args.Viewport.GetFrustumFarPlane(out plane);
-
-            for (int i = 0; i < displayEdges.Count; i++)
-            {
-                plane.Origin = (displayEdges[i].From + displayEdges[i].To) * 0.5;
-                args.Display.DrawLine(displayEdges[i], System.Drawing.Color.DarkOrange, 3);
-                Rhino.Display.Text3d drawText = new Rhino.Display.Text3d(displayLabs[i].ToString(), plane, 2);
-                args.Display.Draw3dText(drawText, System.Drawing.Color.HotPink);
-                drawText.Dispose();
-            }
+            plane.Origin = (displayEdges[i].From + displayEdges[i].To) * 0.5;
+            args.Display.DrawLine(displayEdges[i], System.Drawing.Color.DarkOrange, 3);
+            Rhino.Display.Text3d drawText = new Rhino.Display.Text3d(displayLabs[i].ToString(), plane, 2);
+            args.Display.Draw3dText(drawText, System.Drawing.Color.HotPink);
+            drawText.Dispose();
         }
     }
     #endregion
 
-    int Count = 0;
-    MeshRelaxztion relaxMesh;
-    //Mesh Relaxzxtion
-    public class MeshRelaxztion
-    {
-        public KPlanktonMesh kM;
-        public double AverageLength;
-        public double EdgeLengthConstraintWeight = 1;
-        public double CollisionWeight = 1;
-        public double BendingResistanceWeight = 1;
-
-        private List<Vector3d> totalWeightedMoves;
-        private List<double> totalWeights;
-        public MeshRelaxztion(KPlanktonMesh initiKMesh)
-        {
-            kM = initiKMesh;
-        }
-        public void ComputeAverageLength()
-        {
-            AverageLength = 0;
-            for (int i = 0; i < kM.Halfedges.Count; i += 2)
-            {
-                Point3d s = kM.Vertices[kM.Halfedges[i].StartVertex].ToPoint3d();
-                Line e = new Line(s, kM.Vertices[kM.Halfedges[kM.Halfedges.GetPairHalfedge(i)].StartVertex].ToPoint3d());
-                Line ne = new Line(kM.Vertices[kM.Halfedges[kM.Halfedges[i].PrevHalfedge].StartVertex].ToPoint3d(), s);
-                AverageLength += e.Length;
-            }
-            AverageLength = AverageLength / (kM.Halfedges.Count / 2);
-        }
-        public void UpdateDisplay(List<int> DisplayLabs, List<int> DisplayGraphes, out List<Line> DisplayEdges)
-        {
-            DisplayEdges = new List<Line>();
-            if (DisplayLabs.Count > 0)
-            {
-                for (int i = 0; i < DisplayGraphes.Count; i += 3)
-                {
-                    Point3d sDecr = kM.Vertices[DisplayGraphes[i]].ToPoint3d();
-                    Point3d eDecr = kM.Vertices[DisplayGraphes[i + 1]].ToPoint3d();
-                    DisplayEdges.Add(new Line(sDecr, eDecr));
-
-                    Point3d sIncr = kM.Vertices[DisplayGraphes[i + 2]].ToPoint3d();
-                    DisplayEdges.Add(new Line(sIncr, sDecr)); // halfedge data, prevEdge's end point is nextEdge's start point.
-                }
-            }
-        }
-        public void Update()
-        {
-            totalWeightedMoves = new List<Vector3d>();
-            totalWeights = new List<double>();
-
-            for (int i = 0; i < kM.Vertices.Count; i++)
-            {
-                totalWeightedMoves.Add(Vector3d.Zero);
-                totalWeights.Add(0.0);
-            }
-            Spring();
-            Collision();
-            Bending();
-
-            UpdateVertexPositionsAndVelicities();
-        }
-        
-        private void Spring()
-        {
-            int halfedgeCount = kM.Halfedges.Count;
-
-            for (int k = 0; k < halfedgeCount; k += 2)
-            {
-                KPlanktonHalfedge halfedge = kM.Halfedges[k];
-                int i = halfedge.StartVertex;
-                int j = kM.Halfedges[halfedge.NextHalfedge].StartVertex;
-
-                Vector3d d = kM.Vertices[j].ToPoint3d() - kM.Vertices[i].ToPoint3d();
-                double stretchFactor = 1.0 - AverageLength / d.Length;
-                if (stretchFactor > 0)
-                {
-                    Vector3d move = stretchFactor * 0.5 * (d);
-                    totalWeightedMoves[i] += move;
-                    totalWeightedMoves[j] -= move;
-                    totalWeights[i] += EdgeLengthConstraintWeight * 2;
-                    totalWeights[j] += EdgeLengthConstraintWeight * 2;
-                }
-            }
-        }
-        private void Collision()
-        {
-            RTree rTree = new RTree();
-
-            for (int i = 0; i < kM.Vertices.Count; i++)
-                rTree.Insert(kM.Vertices[i].ToPoint3d(), i);
-            List<int>[] collisionIndices = new List<int>[kM.Vertices.Count];
-
-            for (int i = 0; i < kM.Vertices.Count; i++)
-                collisionIndices[i] = new List<int>();
-
-            for (int i = 0; i < kM.Vertices.Count; i++)
-                rTree.Search(
-                    new Sphere(kM.Vertices[i].ToPoint3d(), AverageLength * 2),
-                    (sender, args) => { if (i < args.Id) collisionIndices[i].Add(args.Id); });
-
-            for (int i = 0; i < collisionIndices.Length; i++)
-            {
-                foreach (int j in collisionIndices[i])
-                {
-                    Vector3d move = kM.Vertices[j].ToPoint3d() - kM.Vertices[i].ToPoint3d();
-                    double currentDistance = move.Length;
-                    if (currentDistance > AverageLength) continue;
-                    move *= 0.5 * (currentDistance - AverageLength) / currentDistance;
-                    totalWeightedMoves[i] += CollisionWeight * move;
-                    totalWeightedMoves[j] -= CollisionWeight * move;
-                    totalWeights[i] += CollisionWeight;
-                    totalWeights[j] += CollisionWeight;
-                }
-            }
-        }
-        private void Bending()
-        {
-            int halfedgeCount = kM.Halfedges.Count;
-            for (int k = 0; k < halfedgeCount; k += 2)
-            {
-                // Skip if this edge is naked
-                if (kM.Halfedges[k].AdjacentFace == -1 || kM.Halfedges[k + 1].AdjacentFace == -1) continue;
-
-                int i = kM.Halfedges[k].StartVertex;
-                int j = kM.Halfedges[k + 1].StartVertex;
-                int p = kM.Halfedges[kM.Halfedges[k].PrevHalfedge].StartVertex;
-                int q = kM.Halfedges[kM.Halfedges[k + 1].PrevHalfedge].StartVertex;
-
-                Point3d vI = kM.Vertices[i].ToPoint3d();
-                Point3d vJ = kM.Vertices[j].ToPoint3d();
-                Point3d vP = kM.Vertices[p].ToPoint3d();
-                Point3d vQ = kM.Vertices[q].ToPoint3d();
-
-                Vector3d nP = Vector3d.CrossProduct(vJ - vI, vP - vI);
-                Vector3d nQ = Vector3d.CrossProduct(vQ - vI, vJ - vI);
-
-                Vector3d planeNormal = (nP + nQ);
-                planeNormal.Unitize();
-
-                Point3d planeOrigin = 0.25 * (vI + vJ + vP + vQ);
-                Plane plane = new Plane(planeOrigin, planeNormal);
-                totalWeightedMoves[i] += BendingResistanceWeight * (plane.ClosestPoint(vI) - vI);
-                totalWeightedMoves[j] += BendingResistanceWeight * (plane.ClosestPoint(vJ) - vJ);
-                totalWeightedMoves[p] += BendingResistanceWeight * (plane.ClosestPoint(vP) - vP);
-                totalWeightedMoves[q] += BendingResistanceWeight * (plane.ClosestPoint(vQ) - vQ);
-                totalWeights[i] += BendingResistanceWeight;
-                totalWeights[j] += BendingResistanceWeight;
-                totalWeights[p] += BendingResistanceWeight;
-                totalWeights[q] += BendingResistanceWeight;
-            }
-        }
-        private void UpdateVertexPositionsAndVelicities()
-        {
-            for (int i = 0; i < kM.Vertices.Count; i++)
-            {
-                if (totalWeights[i] == 0) continue;
-                KPlanktonVertex vertex = kM.Vertices[i];
-                Vector3d move = totalWeightedMoves[i] / totalWeights[i];
-                kM.Vertices.SetVertex(i, vertex.X + move.X, vertex.Y + move.Y, vertex.Z + move.Z);
-            }
-        }
-    }
-    
     //Valence adjustment methodology
     public List<int> InputValence(KPlanktonMesh kM, int V, List<int> E)
     {
@@ -339,7 +215,7 @@ public partial class ValenceNumberTools : GH_ScriptInstance
            \  /            \||/    
         --------------------------------------*/
         List<int> Edges = new List<int>();
-        
+
         int[] halfs = kM.Vertices.GetIncomingHalfedges(V);
         for (int i = 0; i < halfs.Length; i++)
         {
@@ -348,15 +224,15 @@ public partial class ValenceNumberTools : GH_ScriptInstance
             displayGraphes.Add(sDecr);
             displayGraphes.Add(eDecr);
             displayLabs.Add(-i - 1);
-            
+
             int sIncr = kM.Halfedges[kM.Halfedges[halfs[i]].PrevHalfedge].StartVertex;
             displayGraphes.Add(sIncr);
             displayLabs.Add(i + 1);
-            foreach(int k in E)
+            foreach (int k in E)
             {
-                if(k == (-i - 1))
+                if (k == (-i - 1))
                     Edges.Add(halfs[i]);
-                if(k == (i + 1))
+                if (k == (i + 1))
                     Edges.Add(kM.Halfedges[halfs[i]].PrevHalfedge);
             }
         }
@@ -458,7 +334,7 @@ public partial class ValenceNumberTools : GH_ScriptInstance
                     explore = neighbors;
             } while (!escape);
 
-            foreach(int e in flipStorage)
+            foreach (int e in flipStorage)
             {
                 kM.Halfedges.FlipEdge(e);
             }
@@ -477,7 +353,7 @@ public partial class ValenceNumberTools : GH_ScriptInstance
             visited[index] = true;
             visited[kM.Halfedges.GetPairHalfedge(index)] = true; //this line may got error when input index is on mesh boundary.
             List<int> borders = new List<int>();
-            
+
             int uNext = kM.Halfedges.GetPairHalfedge(kM.Halfedges[kM.Halfedges.GetPairHalfedge(kM.Halfedges[index].PrevHalfedge)].NextHalfedge);
             int vNext = kM.Halfedges[kM.Halfedges.GetPairHalfedge(kM.Halfedges[kM.Halfedges.GetPairHalfedge(index)].NextHalfedge)].PrevHalfedge;
             flipStorage.Add(index); //flipStorage.Add(uNext); flipStorage.Add(vNext);
@@ -544,7 +420,7 @@ public partial class ValenceNumberTools : GH_ScriptInstance
                             visited[vNext] = true;
                             visited[kM.Halfedges.GetPairHalfedge(vNext)] = true;
                         }
-                        
+
                     }
                 }
                 if (neighbors.Count == 0)
