@@ -53,107 +53,113 @@ public partial class ValenceKSolver : GH_ScriptInstance
     #endregion
 
 
-    private void RunScript(Mesh M, DataTree<Point3d> Vertices, DataTree<int> vCount, bool Reset, bool On, ref object adM, ref object A)
+    private void RunScript(Mesh M, DataTree<object> Vertices, DataTree<int> vCount, bool Reset, bool On, ref object adM, ref object I)
     {
         // <Custom code> 
-        kM = M.ToKPlanktonMesh();
-        //prestored vertices index
-        List<int> storedID = new List<int>(); //Singularity id
-        double t = 0.0001; //tolerance
-        for (int i = 0; i < Vertices.BranchCount; i++)
-        {
-            for (int j = 0; j < kM.Vertices.Count; j++)
-            {
-                if (kM.Vertices[j].ToPoint3d().DistanceTo(Vertices.Branches[i][0]) <= t)
-                {
-                    storedID.Add(j);
-                }
-            }
-        }
-
-        for (int i = 0; i < storedID.Count; i++)
-        {
-            List<int> flipEdges = InputValence(kM, storedID[i], vCount.Branches[i]);
-            for (int j = 0; j < vCount.Branches[i].Count; j++)
-            {
-                bool type;
-                if (vCount.Branches[i][j] < 0)
-                    type = false;
-                else
-                    type = true;
-                SearchRegion(kM, flipEdges[j], type);
-            }
-        }
-
-        Mesh rM = kM.ToRhinoMesh();
-        adM = rM;
         #region Kangaroo
-        //hinge
-        List<Point3d>[] hingePs = KangarooSolver.Util.GetHingePoints(rM);
-        for (int i = 0; i < hingePs[0].Count; i++)
+        if (Reset || GoalList == null)
         {
-            KangarooSolver.IGoal hinge = new KangarooSolver.Goals.Hinge(hingePs[0][i], hingePs[1][i], hingePs[2][i], hingePs[3][i], 0.0, 1.0);
-            //GoalList.Add(hinge);
-        }
-        //spring
-        List<Line> edges = new List<Line>();
-        List<Line> nextEdges = new List<Line>();
-        List<Point3d> vertices = new List<Point3d>();
-        double averageLength = 0;
-        for (int i = 0; i < kM.Halfedges.Count; i += 2)
-        {
-            Point3d s = kM.Vertices[kM.Halfedges[i].StartVertex].ToPoint3d();
-            Line e = new Line(s, kM.Vertices[kM.Halfedges[kM.Halfedges.GetPairHalfedge(i)].StartVertex].ToPoint3d());
-            Line ne = new Line(kM.Vertices[kM.Halfedges[kM.Halfedges[i].PrevHalfedge].StartVertex].ToPoint3d(), s);
-            edges.Add(e); nextEdges.Add(ne);
-            vertices.Add(s);
-            averageLength += e.Length;
-        }
-        averageLength = averageLength / (kM.Halfedges.Count / 2);
-        foreach (Line l in edges)
-        {
-            KangarooSolver.IGoal sping = new KangarooSolver.Goals.Spring(l, averageLength, 1.0);
-            GoalList.Add(sping);
-        }
-        //collision
-        KangarooSolver.IGoal sphCollision = new KangarooSolver.Goals.SphereCollide(vertices, averageLength, 1.0);
-        //GoalList.Add(sphCollision);
-        //equalAngle
-        KangarooSolver.IGoal equalAngle = new KangarooSolver.Goals.EqualAngle(edges, nextEdges, 1.0);
-        //GoalList.Add(equalAngle);
-
-        if (Reset)
-        {
+            //init setup values
             displayLabs = new List<int>();
             displayGraphes = new List<int>();
             displayEdges = new List<Line>();
-            
-            PS = new KangarooSolver.PhysicalSystem();
             GoalList = new List<IGoal>();
-            foreach (IGoal G in GoalList) //Assign indexes to the particles in each Goal:
+            PS = new PhysicalSystem();
+            double length = 0.0; //for relaxe mesh
+
+            kM = M.ToKPlanktonMesh();
+            // set general mesh length
+            foreach (KPlanktonHalfedge e in kM.Halfedges)
+                length += kM.Vertices[e.StartVertex].ToPoint3d().DistanceTo(kM.Vertices[kM.Halfedges[e.NextHalfedge].StartVertex].ToPoint3d());
+
+            length = length / (kM.Halfedges.Count);
+
+            //prestored vertices index
+            storedID = new List<int>(); //Singularity id
+            double t = 0.0001; //tolerance
+
+            for (int i = 0; i < Vertices.BranchCount; i++)
             {
-                PS.AssignPIndex(G, 0.01); // the second argument is the tolerance distance below which points combine into a single particle
+                if (Vertices.Branches[i][0] is Rhino.Geometry.Point3d)
+                {
+                    for (int j = 0; j < kM.Vertices.Count; j++)
+                    {
+                        Point3d v = ((Rhino.Geometry.Point3d)Vertices.Branches[i][0]);
+                        if (kM.Vertices[j].ToPoint3d().DistanceTo(v) <= t)
+                            storedID.Add(j);
+                    }
+                }
+                else
+                    storedID.Add(Convert.ToInt32(Vertices.Branches[i][0]));
             }
+            //region define
+            for (int i = 0; i < storedID.Count; i++)
+            {
+                List<int> flipEdges = InputValence(kM, storedID[i], vCount.Branches[i]);
+                for (int j = 0; j < vCount.Branches[i].Count; j++)
+                {
+                    bool type;
+                    if (vCount.Branches[i][j] < 0)
+                        type = false;
+                    else
+                        type = true;
+                    SearchRegion(kM, flipEdges[j], type);
+                }
+            }
+            List<int> collisionVertices = new List<int>();
+            for(int i = 0; i < kM.Vertices.Count; i ++)
+            {
+                PS.AddParticle(kM.Vertices[i].ToPoint3d(), 0.0);
+                collisionVertices.Add(i);
+            }
+
+            //spring & hinge
+            for(int i = 0; i < kM.Halfedges.Count; i+=2)
+            {
+                KPlanktonHalfedge e = kM.Halfedges[i];
+                KPlanktonHalfedge ePair = kM.Halfedges[kM.Halfedges.GetPairHalfedge(i)];
+                IGoal spring = new KangarooSolver.Goals.Spring(e.StartVertex, ePair.StartVertex, length, 1.0);
+                //List<int> coVertices = new List<int> { e.StartVertex, ePair.StartVertex, kM.Halfedges[e.PrevHalfedge].StartVertex, kM.Halfedges[ePair.PrevHalfedge].StartVertex};
+                //IGoal coplan = new KangarooSolver.Goals.CoPlanar(coVertices, 1.0);
+                if (!kM.Halfedges.IsBoundary(i))
+                {
+                    IGoal hinge = new KangarooSolver.Goals.Hinge(e.StartVertex, ePair.StartVertex, kM.Halfedges[e.PrevHalfedge].StartVertex, kM.Halfedges[ePair.PrevHalfedge].StartVertex, 0.0, 1.0);
+                    GoalList.Add(hinge);
+                }
+                GoalList.Add(spring);
+                //GoalList.Add(coplan);
+            }
+            IGoal collision = new SphereCollideID(collisionVertices, length / 2, 3.0);
+            GoalList.Add(collision);
+            UpdateDisplayEdges();
         }
-        else
+        if(On)
         {
+            PS.Step(GoalList, true, 0.001);
+            
+            for (int i = 0; i < kM.Vertices.Count; i++)
+            {
+                Point3d kPt = PS.GetPosition(i);
+                kM.Vertices[i].X = (float)kPt.X;
+                kM.Vertices[i].Y = (float)kPt.Y;
+                kM.Vertices[i].Z = (float)kPt.Z;
+            }
             UpdateDisplayEdges();
         }
         #endregion
-        A = displayGraphes;
-        /*
-        if (subStep)
-        {
-          PS.Step(GoalList, true, 0.001);
-          counter++;
-        }*/
 
+        //output section
+        
+        Mesh rM = kM.ToRhinoMesh();
+        adM = rM;
+        I = PS.GetIterations();
         #region component description
         Component.Message = "BurningFront";
         Component.Params.Input[0].Description = "Mesh";
         Component.Params.Input[1].Description = "Singularity point";
         Component.Params.Input[2].Description = "Valence number";
-        Component.Params.Output[1].Description = "Flat State mesh";
+        Component.Params.Output[1].Description = "Iteration count";
+        Component.Params.Output[2].Description = "Adjustment Mesh";
         #endregion
         // </Custom code> 
     }
@@ -167,7 +173,7 @@ public partial class ValenceKSolver : GH_ScriptInstance
     List<Line> displayEdges = new List<Line>();
     List<int> displayGraphes = new List<int>();
     List<int> displayLabs = new List<int>();
-
+    List<int> storedID = new List<int>();
     public void UpdateDisplayEdges()
     {
         displayEdges = new List<Line>();
@@ -185,6 +191,11 @@ public partial class ValenceKSolver : GH_ScriptInstance
     public override void DrawViewportWires(IGH_PreviewArgs args)
     {
         base.DrawViewportWires(args);
+        for (int i = 0; i < storedID.Count; i++)
+        {
+            args.Display.DrawDot(kM.Vertices[storedID[i]].ToPoint3d() + new Point3d(0, 0, 1.0), i.ToString(), System.Drawing.Color.Crimson, System.Drawing.Color.White);
+        }
+
         Plane plane;
         args.Viewport.GetFrustumFarPlane(out plane);
 
@@ -439,6 +450,69 @@ public partial class ValenceKSolver : GH_ScriptInstance
             }
         }
         return true;
+    }
+
+    public class SphereCollideID : GoalObject
+    {
+        public double Strength;
+        public double SqDiam;
+        public double Diam;
+
+        public SphereCollideID(List<int> V, double r, double k)
+        {
+            int L = V.Count;
+            PIndex = V.ToArray();
+            Move = new Vector3d[L];
+            Weighting = new double[L];
+            for (int i = 0; i < L; i++)
+            {
+                Weighting[i] = k;
+            }
+            Diam = r + r;
+            SqDiam = Diam * Diam;
+            Strength = k;
+        }
+
+        public override void Calculate(List<KangarooSolver.Particle> p)
+        {
+            int L = PIndex.Length;
+            double[] Xcoord = new double[L];
+            for (int i = 0; i < L; i++)
+            {
+                Xcoord[i] = p[PIndex[i]].Position.X;
+            }
+            Array.Sort(Xcoord, PIndex);
+
+            for (int i = 0; i < L; i++)
+            {
+                Move[i] = Vector3d.Zero;
+                Weighting[i] = 0;
+            }
+
+            for (int i = 0; i < (PIndex.Length - 1); i++)
+            {
+                for (int j = 1; (i + j) < PIndex.Length; j++)
+                {
+                    int k = i + j;
+                    Vector3d Separation = p[PIndex[k]].Position - p[PIndex[i]].Position;
+                    if (Separation.X < Diam)
+                    {
+                        if (Separation.SquareLength < SqDiam)
+                        {
+                            double LengthNow = Separation.Length;
+                            double stretchfactor = 1.0 - Diam / LengthNow;
+                            Vector3d SpringMove = 0.5 * Separation * stretchfactor;
+                            Move[i] += SpringMove;
+                            Move[k] -= SpringMove;
+                            Weighting[i] = Strength;
+                            Weighting[k] = Strength;
+                        }
+                    }
+
+                    else { break; }
+                }
+            }
+        }
     }
     // </Custom additional code>  
 }
