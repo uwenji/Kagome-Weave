@@ -53,7 +53,7 @@ public partial class ValenceKSolver : GH_ScriptInstance
     #endregion
 
 
-    private void RunScript(Mesh M, DataTree<object> Vertices, DataTree<int> vCount, bool Reset, bool On, ref object adM, ref object I)
+    private void RunScript(Mesh M, DataTree<object> Vertices, DataTree<int> vCount, bool Reset, bool On, object Grab, ref object adM, ref object I)
     {
         // <Custom code> 
         #region Kangaroo
@@ -119,17 +119,17 @@ public partial class ValenceKSolver : GH_ScriptInstance
                 KPlanktonHalfedge e = kM.Halfedges[i];
                 KPlanktonHalfedge ePair = kM.Halfedges[kM.Halfedges.GetPairHalfedge(i)];
                 IGoal spring = new KangarooSolver.Goals.Spring(e.StartVertex, ePair.StartVertex, length, 1.0);
-                //List<int> coVertices = new List<int> { e.StartVertex, ePair.StartVertex, kM.Halfedges[e.PrevHalfedge].StartVertex, kM.Halfedges[ePair.PrevHalfedge].StartVertex};
-                //IGoal coplan = new KangarooSolver.Goals.CoPlanar(coVertices, 1.0);
                 if (!kM.Halfedges.IsBoundary(i))
                 {
                     IGoal hinge = new KangarooSolver.Goals.Hinge(e.StartVertex, ePair.StartVertex, kM.Halfedges[e.PrevHalfedge].StartVertex, kM.Halfedges[ePair.PrevHalfedge].StartVertex, 0.0, 1.0);
                     GoalList.Add(hinge);
                 }
                 GoalList.Add(spring);
-                //GoalList.Add(coplan);
             }
             IGoal collision = new SphereCollideID(collisionVertices, length / 2, 3.0);
+
+            if (Grab != null)
+                GoalList.Add((IGoal)Grab);
             GoalList.Add(collision);
             UpdateDisplayEdges();
         }
@@ -154,7 +154,7 @@ public partial class ValenceKSolver : GH_ScriptInstance
         adM = rM;
         I = PS.GetIterations();
         #region component description
-        Component.Message = "BurningFront";
+        Component.Message = "ValenceTool";
         Component.Params.Input[0].Description = "Mesh";
         Component.Params.Input[1].Description = "Singularity point";
         Component.Params.Input[2].Description = "Valence number";
@@ -193,7 +193,7 @@ public partial class ValenceKSolver : GH_ScriptInstance
         base.DrawViewportWires(args);
         for (int i = 0; i < storedID.Count; i++)
         {
-            args.Display.DrawDot(kM.Vertices[storedID[i]].ToPoint3d() + new Point3d(0, 0, 1.0), i.ToString(), System.Drawing.Color.Crimson, System.Drawing.Color.White);
+            args.Display.DrawDot(kM.Vertices[storedID[i]].ToPoint3d() + new Point3d(0, 0, 1.0), i.ToString(), System.Drawing.Color.Azure, System.Drawing.Color.White);
         }
 
         Plane plane;
