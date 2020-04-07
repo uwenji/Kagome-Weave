@@ -53,7 +53,7 @@ public partial class ValenceKSolver : GH_ScriptInstance
     #endregion
 
 
-    private void RunScript(Mesh M, DataTree<object> Vertices, DataTree<int> vCount, bool Reset, bool On, object Grab, ref object adM, ref object I)
+    private void RunScript(Mesh M, DataTree<object> Vertices, DataTree<int> vCount, bool Append, bool Reset, bool On, object Grab, ref object adM, ref object I)
     {
         // <Custom code> 
         #region Kangaroo
@@ -65,7 +65,8 @@ public partial class ValenceKSolver : GH_ScriptInstance
             displayEdges = new List<Line>();
             GoalList = new List<IGoal>();
             PS = new PhysicalSystem();
-            double length = 0.0; //for relaxe mesh
+            length = 0.0; //for relaxe mesh
+            add = 0;
 
             kM = M.ToKPlanktonMesh();
             // set general mesh length
@@ -92,20 +93,23 @@ public partial class ValenceKSolver : GH_ScriptInstance
                 else
                     storedID.Add(Convert.ToInt32(Vertices.Branches[i][0]));
             }
+            UpdateDisplayEdges();
+        }
+        if(Append)
+        {
             //region define
-            for (int i = 0; i < storedID.Count; i++)
+            
+            List<int> flipEdges = InputValence(kM, storedID[add], vCount.Branches[add]);
+            for (int i = 0; i < vCount.Branches[add].Count; i++)
             {
-                List<int> flipEdges = InputValence(kM, storedID[i], vCount.Branches[i]);
-                for (int j = 0; j < vCount.Branches[i].Count; j++)
-                {
-                    bool type;
-                    if (vCount.Branches[i][j] < 0)
-                        type = false;
-                    else
-                        type = true;
-                    SearchRegion(kM, flipEdges[j], type);
-                }
+                bool type;
+                if (vCount.Branches[add][i] < 0)
+                    type = false;
+                else
+                    type = true;
+                SearchRegion(kM, flipEdges[i], type);
             }
+            
             List<int> collisionVertices = new List<int>();
             for(int i = 0; i < kM.Vertices.Count; i ++)
             {
@@ -131,6 +135,7 @@ public partial class ValenceKSolver : GH_ScriptInstance
             if (Grab != null)
                 GoalList.Add((IGoal)Grab);
             GoalList.Add(collision);
+            add++;
             UpdateDisplayEdges();
         }
         if(On)
@@ -174,6 +179,8 @@ public partial class ValenceKSolver : GH_ScriptInstance
     List<int> displayGraphes = new List<int>();
     List<int> displayLabs = new List<int>();
     List<int> storedID = new List<int>();
+    int add;
+    double length;
     public void UpdateDisplayEdges()
     {
         displayEdges = new List<Line>();
