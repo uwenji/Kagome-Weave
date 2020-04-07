@@ -84,9 +84,6 @@
     <Reference Include="Grasshopper">
       <HintPath>..\..\..\..\..\..\..\..\..\..\Program Files\Rhino 6\Plug-ins\Grasshopper\Grasshopper.dll</HintPath>
     </Reference>
-    <Reference Include="Kangaroo2Component">
-      <HintPath>..\..\..\..\..\..\..\Learning\kangaroo\Kangaroo2Component.dll</HintPath>
-    </Reference>
     <Reference Include="KangarooSolver">
       <HintPath>..\..\..\..\..\..\..\..\..\..\Program Files\Rhino 6\Plug-ins\Grasshopper\Components\KangarooSolver.dll</HintPath>
     </Reference>
