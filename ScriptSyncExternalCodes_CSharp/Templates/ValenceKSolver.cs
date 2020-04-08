@@ -53,7 +53,7 @@ public partial class ValenceKSolver : GH_ScriptInstance
     #endregion
 
 
-    private void RunScript(Mesh M, DataTree<object> Vertices, DataTree<int> vCount, bool Append, bool Reset, bool On, object Grab, ref object adM, ref object I)
+    private void RunScript(Mesh M, int desired, DataTree<object> Vertices, DataTree<int> vCount, bool Append, bool Reset, bool On, object Grab, ref object adM, ref object I, ref object dEdges)
     {
         // <Custom code> 
         #region Kangaroo
@@ -63,47 +63,48 @@ public partial class ValenceKSolver : GH_ScriptInstance
             displayLabs = new List<int>();
             displayGraphes = new List<int>();
             displayEdges = new List<Line>();
+            storedID = new List<int>();
             GoalList = new List<IGoal>();
             PS = new PhysicalSystem();
             length = 0.0; //for relaxe mesh
-            add = 0;
+            adding = -1;
 
             kM = M.ToKPlanktonMesh();
             // set general mesh length
             foreach (KPlanktonHalfedge e in kM.Halfedges)
                 length += kM.Vertices[e.StartVertex].ToPoint3d().DistanceTo(kM.Vertices[kM.Halfedges[e.NextHalfedge].StartVertex].ToPoint3d());
 
-            length = length / (kM.Halfedges.Count);
+            length /= kM.Halfedges.Count;
 
             //prestored vertices index
-            storedID = new List<int>(); //Singularity id
-            double t = 0.0001; //tolerance
-
-            for (int i = 0; i < Vertices.BranchCount; i++)
-            {
-                if (Vertices.Branches[i][0] is Rhino.Geometry.Point3d)
-                {
-                    for (int j = 0; j < kM.Vertices.Count; j++)
-                    {
-                        Point3d v = ((Rhino.Geometry.Point3d)Vertices.Branches[i][0]);
-                        if (kM.Vertices[j].ToPoint3d().DistanceTo(v) <= t)
-                            storedID.Add(j);
-                    }
-                }
-                else
-                    storedID.Add(Convert.ToInt32(Vertices.Branches[i][0]));
-            }
-            UpdateDisplayEdges();
+            stored = -1;
         }
-        if(Append)
+        if(Append && adding < Vertices.BranchCount - 1)
         {
-            //region define
+            double t = 0.0001; //tolerance
+            adding++;
+            PS = new PhysicalSystem();
+
+            if (Vertices.Branches[adding][0] is Rhino.Geometry.Point3d)
+            {
+                for (int j = 0; j < kM.Vertices.Count; j++)
+                {
+                    Point3d v = ((Rhino.Geometry.Point3d)Vertices.Branches[adding][0]);
+                    if (kM.Vertices[j].ToPoint3d().DistanceTo(v) <= t)
+                        stored = j;
+                }
+            }
+            else
+                stored = Convert.ToInt32(Vertices.Branches[adding][0]);
             
-            List<int> flipEdges = InputValence(kM, storedID[add], vCount.Branches[add]);
-            for (int i = 0; i < vCount.Branches[add].Count; i++)
+            storedID.Add(stored);
+            //region define
+            List<int> flipEdges = InputValence(kM, stored, vCount.Branches[adding]);
+            
+            for (int i = 0; i < vCount.Branches[adding].Count; i++)
             {
                 bool type;
-                if (vCount.Branches[add][i] < 0)
+                if (vCount.Branches[adding][i] < 0)
                     type = false;
                 else
                     type = true;
@@ -131,17 +132,18 @@ public partial class ValenceKSolver : GH_ScriptInstance
                 GoalList.Add(spring);
             }
             IGoal collision = new SphereCollideID(collisionVertices, length / 2, 3.0);
+            GoalList.Add(collision);
 
+            //NOTE: some issue by replacment new grab goal in gh work
             if (Grab != null)
                 GoalList.Add((IGoal)Grab);
-            GoalList.Add(collision);
-            add++;
+            
             UpdateDisplayEdges();
         }
-        if(On)
+        if(On && storedID.Count != 0)
         {
             PS.Step(GoalList, true, 0.001);
-            
+
             for (int i = 0; i < kM.Vertices.Count; i++)
             {
                 Point3d kPt = PS.GetPosition(i);
@@ -149,20 +151,40 @@ public partial class ValenceKSolver : GH_ScriptInstance
                 kM.Vertices[i].Y = (float)kPt.Y;
                 kM.Vertices[i].Z = (float)kPt.Z;
             }
-            UpdateDisplayEdges();
+            if(displayGraphes != null)
+                UpdateDisplayEdges();
         }
         #endregion
+        
+        //display desired edge
+        if(kM.Vertices.Count > 0)
+        {
+            desiredEdges = new List<Line>();
+
+            int[] halfs = kM.Vertices.GetIncomingHalfedges(desired);
+            for (int i = 0; i < halfs.Length; i++)
+            {
+                Point3d sDecr = kM.Vertices[kM.Halfedges[halfs[i]].StartVertex].ToPoint3d();
+                Point3d eDecr = kM.Vertices[kM.Halfedges[kM.Halfedges.GetPairHalfedge(halfs[i])].StartVertex].ToPoint3d();
+                desiredEdges.Add(new Line(sDecr, eDecr));
+
+                Point3d sIncr = kM.Vertices[kM.Halfedges[kM.Halfedges[halfs[i]].PrevHalfedge].StartVertex].ToPoint3d();
+                desiredEdges.Add(new Line(sIncr, sDecr));
+            }
+        }
 
         //output section
         
         Mesh rM = kM.ToRhinoMesh();
         adM = rM;
         I = PS.GetIterations();
+        dEdges = desiredEdges;
         #region component description
         Component.Message = "ValenceTool";
         Component.Params.Input[0].Description = "Mesh";
-        Component.Params.Input[1].Description = "Singularity point";
-        Component.Params.Input[2].Description = "Valence number";
+        Component.Params.Input[1].Description = "Desired vertex number";
+        Component.Params.Input[2].Description = "Singularity point";
+        Component.Params.Input[3].Description = "Valence number";
         Component.Params.Output[1].Description = "Iteration count";
         Component.Params.Output[2].Description = "Adjustment Mesh";
         #endregion
@@ -179,7 +201,9 @@ public partial class ValenceKSolver : GH_ScriptInstance
     List<int> displayGraphes = new List<int>();
     List<int> displayLabs = new List<int>();
     List<int> storedID = new List<int>();
-    int add;
+    List<Line> desiredEdges = new List<Line>();
+    int adding;
+    int stored;
     double length;
     public void UpdateDisplayEdges()
     {
