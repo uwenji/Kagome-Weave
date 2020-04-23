@@ -53,7 +53,8 @@ public partial class ValenceKSolver : GH_ScriptInstance
     #endregion
 
 
-    private void RunScript(Mesh M, int desired, DataTree<object> Vertices, DataTree<int> vCount, bool Append, bool Reset, bool On, object Grab, ref object adM, ref object I, ref object dEdges)
+    private void RunScript(Mesh M, int desired, DataTree<object> Vertices, DataTree<int> vCount, List<string> Surgery, bool Append, bool Reset, bool On, bool Operate, object Grab,
+        ref object adM, ref object I, ref object dEdges, ref object KM)
     {
         // <Custom code> 
         #region Kangaroo
@@ -68,14 +69,14 @@ public partial class ValenceKSolver : GH_ScriptInstance
             PS = new PhysicalSystem();
             length = 0.0; //for relaxe mesh
             adding = -1;
-
+            operation = 0;
             kM = M.ToKPlanktonMesh();
             // set general mesh length
             foreach (KPlanktonHalfedge e in kM.Halfedges)
                 length += kM.Vertices[e.StartVertex].ToPoint3d().DistanceTo(kM.Vertices[kM.Halfedges[e.NextHalfedge].StartVertex].ToPoint3d());
 
             length /= kM.Halfedges.Count;
-
+            operation = 0;
             //prestored vertices index
             stored = -1;
         }
@@ -137,10 +138,63 @@ public partial class ValenceKSolver : GH_ScriptInstance
             //NOTE: some issue by replacment new grab goal in gh work
             if (Grab != null)
                 GoalList.Add((IGoal)Grab);
-            
-            UpdateDisplayEdges();
         }
-        if(On && storedID.Count != 0)
+        if (Operate && operation < 1)
+        {
+            operation++;
+            List<string[]> edgeSurgeries = new List<string[]>();
+            foreach (string str in Surgery)
+                edgeSurgeries.Add(str.Split(':'));
+
+            foreach (string[] str in edgeSurgeries)
+            {
+                if (str[0] == "S")
+                    kM.Halfedges.TriangleSplitEdge(Convert.ToInt32(str[1]));
+
+                if (str[0] == "F")
+                    kM.Halfedges.FlipEdge(Convert.ToInt32(str[1]));
+
+                if (str[0] == "A")
+                {
+                    string[] sF = str[1].Split(',');
+                    kM.Faces.AddFace(Convert.ToInt32(sF[0]), Convert.ToInt32(sF[1]), Convert.ToInt32(sF[2]));
+                }
+                    
+            }
+
+            //=================
+            adding++;
+            PS = new PhysicalSystem();
+
+            List<int> collisionVertices = new List<int>();
+            for (int i = 0; i < kM.Vertices.Count; i++)
+            {
+                PS.AddParticle(kM.Vertices[i].ToPoint3d(), 0.0);
+                collisionVertices.Add(i);
+            }
+
+            //spring & hinge
+            for (int i = 0; i < kM.Halfedges.Count; i += 2)
+            {
+                KPlanktonHalfedge e = kM.Halfedges[i];
+                KPlanktonHalfedge ePair = kM.Halfedges[kM.Halfedges.GetPairHalfedge(i)];
+                IGoal spring = new KangarooSolver.Goals.Spring(e.StartVertex, ePair.StartVertex, length, 1.0);
+                if (!kM.Halfedges.IsBoundary(i))
+                {
+                    IGoal hinge = new KangarooSolver.Goals.Hinge(e.StartVertex, ePair.StartVertex, kM.Halfedges[e.PrevHalfedge].StartVertex, kM.Halfedges[ePair.PrevHalfedge].StartVertex, 0.0, 1.0);
+                    GoalList.Add(hinge);
+                }
+                GoalList.Add(spring);
+            }
+            IGoal collision = new SphereCollideID(collisionVertices, length / 2, 3.0);
+            GoalList.Add(collision);
+
+            //NOTE: some issue by replacment new grab goal in gh work
+            if (Grab != null)
+                GoalList.Add((IGoal)Grab);
+
+        }
+        if (On && storedID.Count != 0)
         {
             PS.Step(GoalList, true, 0.001);
 
@@ -151,9 +205,8 @@ public partial class ValenceKSolver : GH_ScriptInstance
                 kM.Vertices[i].Y = (float)kPt.Y;
                 kM.Vertices[i].Z = (float)kPt.Z;
             }
-            if(displayGraphes != null)
-                UpdateDisplayEdges();
         }
+        
         #endregion
         
         //display desired edge
@@ -172,19 +225,22 @@ public partial class ValenceKSolver : GH_ScriptInstance
                 desiredEdges.Add(new Line(sIncr, sDecr));
             }
         }
-
+        
         //output section
         
         Mesh rM = kM.ToRhinoMesh();
         adM = rM;
         I = PS.GetIterations();
         dEdges = desiredEdges;
+        KM = kM;
+
         #region component description
         Component.Message = "ValenceTool";
         Component.Params.Input[0].Description = "Mesh";
         Component.Params.Input[1].Description = "Desired vertex number";
         Component.Params.Input[2].Description = "Singularity point";
         Component.Params.Input[3].Description = "Valence number";
+        Component.Params.Input[4].Description = "Split or Flip edge for fix singularity.\ne.g. S:100, F:99";
         Component.Params.Output[1].Description = "Iteration count";
         Component.Params.Output[2].Description = "Adjustment Mesh";
         #endregion
@@ -195,7 +251,7 @@ public partial class ValenceKSolver : GH_ScriptInstance
     KPlanktonMesh kM;
     KangarooSolver.PhysicalSystem PS = new KangarooSolver.PhysicalSystem();
     List<IGoal> GoalList = new List<IGoal>();
-
+    int operation = -1;
     #region Visualize edges
     List<Line> displayEdges = new List<Line>();
     List<int> displayGraphes = new List<int>();
@@ -205,20 +261,6 @@ public partial class ValenceKSolver : GH_ScriptInstance
     int adding;
     int stored;
     double length;
-    public void UpdateDisplayEdges()
-    {
-        displayEdges = new List<Line>();
-
-        for (int i = 0; i < displayGraphes.Count; i+= 3)
-        {
-            Point3d sDecr = kM.Vertices[displayGraphes[i]].ToPoint3d();
-            Point3d eDecr = kM.Vertices[displayGraphes[i + 1]].ToPoint3d();
-            Point3d sIncr = kM.Vertices[displayGraphes[i + 2]].ToPoint3d();
-
-            displayEdges.Add(new Line(sDecr, eDecr));
-            displayEdges.Add(new Line(sIncr, sDecr));//halfedge data previous edge's end is current edge's start
-        }
-    }
     public override void DrawViewportWires(IGH_PreviewArgs args)
     {
         base.DrawViewportWires(args);

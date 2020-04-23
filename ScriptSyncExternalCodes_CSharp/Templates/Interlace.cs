@@ -59,7 +59,7 @@ public partial class Interlace : GH_ScriptInstance
         if(Reset || GoalList == null)
         {
             curves = new List<Polyline>();
-            adM = ToInterlaceMesh(M, S, out curves, out nodeCurveID);
+            initWeaveMesh = ToInterlaceMesh(M, S, out curves, out nodeCurveID);
             
             //kangaroo section
             GoalList = new List<IGoal>();
@@ -121,14 +121,17 @@ public partial class Interlace : GH_ScriptInstance
                 }
             }
             IGoal collision = new SphereCollideID(collisionIDs, 0.2, 1);
+            /*
             GoalList.Add(collision);
             if (Grab != null)
                 GoalList.Add((IGoal)Grab);
+                */
         }
 
         if (On)
         {
-            PS.Step(GoalList, true, 0.001);
+            if(PS.GetIterations() < 600)
+                PS.Step(GoalList, true, 0.001);
             int id = -1;
             for(int i = 0; i < curves.Count; i++)
             {
@@ -139,6 +142,12 @@ public partial class Interlace : GH_ScriptInstance
                 }
             }
         }
+        else
+        {
+            curves = new List<Polyline>();
+            initWeaveMesh = ToInterlaceMesh(M, S, out curves, out nodeCurveID);
+        }
+        adM = initWeaveMesh;
         L = curves;
         //N = PS.GetOutput(GoalList);
         #region Description
@@ -149,6 +158,7 @@ public partial class Interlace : GH_ScriptInstance
     }
 
     // <Custom additional code> 
+    Mesh initWeaveMesh;
     List<int>[] nodeCurveID;
     List<Polyline> curves;
     KangarooSolver.PhysicalSystem PS = new KangarooSolver.PhysicalSystem();
@@ -226,6 +236,7 @@ public partial class Interlace : GH_ScriptInstance
                 {
                     if (k != i)
                     {
+                        // find closet point from all polyline nodes
                         double t;
                         PolylineCurve polyline = jointCurves[k] as PolylineCurve;
                         polyline.ClosestPoint(pCurve[j], out t);
