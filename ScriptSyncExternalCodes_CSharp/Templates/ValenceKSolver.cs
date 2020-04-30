@@ -157,7 +157,8 @@ public partial class ValenceKSolver : GH_ScriptInstance
                 if (str[0] == "A")
                 {
                     string[] sF = str[1].Split(',');
-                    kM.Faces.AddFace(Convert.ToInt32(sF[0]), Convert.ToInt32(sF[1]), Convert.ToInt32(sF[2]));
+                    int okay = kM.Faces.AddFace(Convert.ToInt32(sF[0]), Convert.ToInt32(sF[1]), Convert.ToInt32(sF[2]));
+                    Print(okay.ToString());
                 }
                     
             }

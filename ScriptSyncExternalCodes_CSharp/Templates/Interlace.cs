@@ -226,13 +226,25 @@ public partial class Interlace : GH_ScriptInstance
         {
             Polyline pCurve;
             jointCurves[i].TryGetPolyline(out pCurve);
-            WeaveCurves.Add(pCurve);
+            //======== pull weave cuvre back to mesh for simulation purpose
+            
             List<int> ids = new List<int>();
             for (int j = 0; j < pCurve.Count; j++)
             {
                 double distance = 10000.0;
                 int closestID = 0;
-                for(int k = 0; k < jointCurves.Length; k ++)
+                Point3d v = new Point3d(wM.Vertices[0]);
+                double pullT = 10000.0;
+                for (int k = 0; k < wM.Vertices.Count; k++)
+                {
+                    if (pullT > pCurve[j].DistanceTo(new Point3d(wM.Vertices[k])))
+                    {
+                        pullT = pCurve[j].DistanceTo(new Point3d(wM.Vertices[k]));
+                        v = new Point3d(wM.Vertices[k]);
+                    }
+                }
+                pCurve[j] = v;
+                for (int k = 0; k < jointCurves.Length; k ++)
                 {
                     if (k != i)
                     {
@@ -250,7 +262,9 @@ public partial class Interlace : GH_ScriptInstance
                 }
                 ids.Add(closestID); // pre add to array of list
             }
+
             NodeBelongCurveID[i] = ids;
+            WeaveCurves.Add(pCurve);
         }
         return wM;
     }
